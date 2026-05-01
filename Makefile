@@ -1,4 +1,4 @@
-.PHONY: help docs check fmt test lint kind-up kind-down deps-up docker-build docker-load deploy-demo smoke
+.PHONY: help docs check fmt test operator-fmt operator-test lint kind-up kind-down deps-up docker-build docker-load deploy-demo smoke
 SHELL := pwsh.exe
 .SHELLFLAGS := -NoProfile -Command
 
@@ -8,7 +8,7 @@ help: ## Show available commands.
 docs: ## Validate that required Phase 0 documentation files exist.
 	@$$required = @('README.md','ROADMAP.md','docs/tool-versions.md','docs/ci-plan.md','docs/adr/0001-use-kubernetes-operator.md','docs/adr/0002-use-kafka-as-the-event-log.md','docs/adr/0003-use-openlineage-for-lineage-events.md','docs/adr/0004-keep-lineage-async.md'); $$missing = $$required | Where-Object { -not (Test-Path $$_) }; if ($$missing) { Write-Error ('Missing required docs: ' + ($$missing -join ', ')); exit 1 }
 
-check: docs test ## Run documentation and code checks.
+check: docs test operator-test ## Run documentation and code checks.
 	@Write-Host "Checks passed."
 
 fmt: ## Format Go code.
@@ -16,6 +16,12 @@ fmt: ## Format Go code.
 
 test: ## Run Go unit tests.
 	@Set-Location workers; go test ./...
+
+operator-fmt: ## Format operator Go code.
+	@Set-Location operator; gofmt -w .
+
+operator-test: ## Run operator Go tests.
+	@Set-Location operator; go test ./...
 
 lint: ## Run linters once implementation packages exist.
 	@Write-Host "No linters configured yet."

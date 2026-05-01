@@ -68,12 +68,22 @@ make kind-down
 `make deploy-demo` exposes Prometheus at <http://localhost:30000> and Grafana
 at <http://localhost:30001> (`admin` / `admin`).
 
+Phase 2 operator commands:
+
+```sh
+make operator-test
+kubectl apply -k operator/config
+kubectl apply -f examples/pipeline.yaml
+kubectl get pipelines -n kinetix
+```
+
 ## Documentation
 
 - [Roadmap](ROADMAP.md)
 - [Tool versions](docs/tool-versions.md)
 - [CI plan](docs/ci-plan.md)
 - [Phase 1 local runtime plan](docs/phase-1-local-runtime-plan.md)
+- [Phase 2 operator plan](docs/phase-2-operator-plan.md)
 - [Architecture decisions](docs/adr)
 
 ## Current Status
@@ -84,4 +94,6 @@ Phase 1 implements a hardcoded local pipeline:
 producer -> kinetix-input -> worker -> kinetix-output -> sink
 ```
 
-The operator, CRD, lineage service, and UI are planned for later phases.
+Phase 2 adds the `Pipeline` CRD and a controller that reconciles worker
+Deployments, ConfigMaps, and Strimzi KafkaTopic resources from a declarative
+pipeline manifest.

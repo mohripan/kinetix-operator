@@ -43,6 +43,9 @@ The platform should:
 - Show a live pipeline DAG with throughput, errors, health, and lineage lookup.
 - Support safe rollout patterns for transform versions.
 - Recover from worker crashes without data loss and with practical duplicate protection.
+- Make tenancy, security boundaries, schema compatibility, retention, and
+  operational resource expectations explicit before production-shaped features
+  depend on them.
 
 ## Non-Goals For The First Iteration
 
@@ -68,6 +71,8 @@ Responsibilities:
 - Track health and readiness in `status`.
 - Clean up owned resources through owner references and finalizers.
 - Validate pipeline manifests through admission webhooks once the API stabilizes.
+- Enforce admission-time policy for namespace ownership, schema references,
+  allowed images, and resource guardrails as those policies become available.
 
 ### Data Plane
 
@@ -82,6 +87,8 @@ Responsibilities:
 - Use Dapr sidecars where useful for state, pub/sub abstraction, and secrets.
 - Emit metrics and traces.
 - Emit lineage events asynchronously.
+- Surface Kafka lag, retry pressure, dead-letter counts, and throttling signals
+  so backpressure decisions are visible instead of implicit.
 
 ### Lineage Plane
 
@@ -95,6 +102,56 @@ Responsibilities:
 - Answer reverse lineage questions such as "which input records produced this output record?"
 - Preserve transform image, version, schema fingerprint, timestamp, and trace metadata.
 - Keep the data plane moving even if lineage ingestion lags.
+
+### Security And Supply Chain
+
+Security is a first-class architecture concern, not only a Phase 4 mesh feature.
+The roadmap should progressively answer:
+
+- How runtime secrets are sourced, rotated, and mounted.
+- Which namespaces and service accounts can create or reconcile `Pipeline`
+  resources.
+- Which pod security standards and network policies are required for local and
+  production profiles.
+- Whether transform images must be signed and how signatures are verified.
+- How SBOMs, vulnerability scanning, and base image policies fit into release
+  workflows.
+- How Kubernetes RBAC, admission control, Istio policies, and network policies
+  complement each other instead of duplicating responsibility.
+
+### Tenancy Model
+
+Kinetix needs an explicit tenancy decision before production design hardens. The
+first iteration may choose single-tenant operation, but the choice must be
+documented because it shapes namespace layout, Kafka topic naming, resource
+quotas, lineage isolation, RBAC, and noisy-neighbor protection. If multi-tenancy
+is deferred, the API and resource naming should avoid choices that make it
+expensive to add later.
+
+### Schema And Compatibility
+
+The record model includes schema names and fingerprints, but event systems also
+need schema compatibility rules. Kinetix should define a schema registry
+strategy, how transforms declare accepted schema versions, what compatibility
+modes are supported, and how invalid or unexpected records are handled. Schema
+failures should be observable and should integrate with retry and dead-letter
+behavior.
+
+### Backpressure And Flow Control
+
+Kafka buffering and KEDA autoscaling are not a full backpressure strategy.
+Kinetix must decide what happens when input rate exceeds transform capacity:
+scale, throttle, pause, shed, route to dead-letter topics, or accept lag. Those
+decisions should be visible through metrics, status, alerts, and runbooks.
+
+### Disaster Recovery, Retention, And Cost Model
+
+The roadmap should define practical RPO/RTO targets for local and production
+profiles, data retention for Kafka topics and lineage storage, backup and
+restore expectations for Postgres, and resource sizing guidance for Kafka,
+workers, Redis, and Postgres. These do not need exact cloud prices, but they do
+need enough numbers and defaults for operators to reason about requests,
+limits, connection pools, partitions, and storage growth.
 
 ## Proposed Repository Layout
 
@@ -187,6 +244,15 @@ Build:
 - Finalizers for cleanup.
 - Owner references for Kubernetes-owned resources.
 - Validation webhook after the first API shape is stable.
+- Initial RBAC design for operator permissions and user permissions to create
+  `Pipeline` resources in approved namespaces.
+- Initial tenancy ADR that states whether Phase 2 targets single-tenant,
+  namespace-per-team, or cluster-wide multi-tenant operation.
+- Initial security ADR covering secrets management, pod security, network
+  policy, image signing, and supply-chain posture for early phases.
+- Initial schema registry ADR that records the planned registry integration,
+  compatibility mode, and how `spec.source.schema` is interpreted before the
+  registry exists.
 
 Initial `Pipeline` API shape:
 
@@ -214,6 +280,8 @@ Testing:
 - envtest unit tests for reconciliation behavior.
 - kuttl end-to-end tests for apply, update, status, and delete flows.
 - Idempotency tests that run reconciliation repeatedly against the same desired state.
+- RBAC smoke tests that prove a user can create allowed `Pipeline` resources
+  and cannot mutate controller-owned status or resources directly.
 
 Exit criteria:
 
@@ -221,6 +289,8 @@ Exit criteria:
 - `kubectl get pipelines` shows useful status.
 - `kubectl delete pipeline example` cleans up owned resources.
 - Reconciliation handles missing or partially-created resources.
+- The tenancy, security baseline, and schema registry strategy are captured in
+  ADRs, even if their full implementation lands in later phases.
 
 ### Phase 3: First-Class Lineage
 
@@ -229,6 +299,10 @@ Exit criteria:
 Build:
 
 - OpenLineage-based event model.
+- Schema registry integration for source, transform, and sink schemas.
+- Transform schema contracts that declare accepted input versions and emitted
+  output versions.
+- Compatibility checks for `Pipeline` manifests before workers are rolled out.
 - Worker lineage emitter that publishes to a dedicated lineage topic.
 - Lineage ingestion service in `/lineage`.
 - Postgres schema for runs, datasets, transforms, records, and edges.
@@ -243,11 +317,15 @@ Lineage principles:
 - Failed lineage publishing must be visible through metrics and logs.
 - Every output record should include enough metadata to find its producing transform and input records.
 - Transform image, transform version, schema fingerprint, and processing timestamp must be recorded.
+- Schema compatibility failures must be visible as data quality events and must
+  not be confused with infrastructure failures.
 
 Testing:
 
 - Unit tests for lineage event creation.
+- Unit tests for schema compatibility decisions.
 - Integration tests for lineage ingestion into Postgres.
+- Integration tests for schema registry lookup and incompatible schema rejection.
 - Query tests for reverse lineage traversal.
 - Smoke test that sends an input record and resolves lineage from the output record.
 
@@ -256,6 +334,8 @@ Exit criteria:
 - The UI shows a live DAG for at least one pipeline.
 - A user can search for an output record ID and see the input record lineage.
 - Lineage ingestion can lag without stopping the data plane.
+- A transform receiving an unsupported schema version is handled predictably and
+  exposes a clear status, metric, and event.
 
 ### Phase 4: Reliability And Safe Rollouts
 
@@ -267,8 +347,17 @@ Build:
 - Retry policy for transient worker failures.
 - Idempotency keys and Redis-backed deduplication.
 - Kafka producer idempotence and transactional patterns where appropriate.
+- Explicit backpressure policy for slow transforms, including lag thresholds,
+  throttling behavior, worker pause/resume behavior, and when records are routed
+  to dead-letter topics.
 - KEDA autoscaling from Kafka lag.
 - Istio mTLS.
+- Kubernetes NetworkPolicies for operator, worker, Kafka, Redis, Postgres, and
+  UI communication paths.
+- Pod security standards for operator-managed workloads.
+- Secrets management implementation using the strategy chosen in the security
+  ADR.
+- Image signature verification for operator and transform images.
 - Canary rollout for transform versions.
 - Shadow traffic or mirrored processing for candidate transform versions.
 - Output comparison tooling for canary and shadow runs.
@@ -278,6 +367,9 @@ Testing:
 - Failure injection tests for worker crashes.
 - Tests for duplicate input handling.
 - Tests for dead-letter behavior.
+- Tests for slow transform backpressure and lag-driven behavior.
+- Tests that NetworkPolicies block unexpected traffic and allow required paths.
+- Tests that unsigned or untrusted images are rejected when verification is enabled.
 - kuttl tests for rollout and rollback behavior.
 
 Exit criteria:
@@ -286,6 +378,10 @@ Exit criteria:
 - Duplicate records are detected within the configured deduplication window.
 - A transform version can be canaried and rolled back.
 - Kafka lag can drive scaling decisions.
+- Slow consumers have documented and tested behavior before lag becomes
+  unbounded.
+- The security baseline covers mTLS, RBAC, network policy, pod security,
+  secrets, and image verification.
 
 ### Phase 5: Operations, Packaging, And Documentation
 
@@ -297,6 +393,15 @@ Build:
 - Helm chart or umbrella chart for local dependencies.
 - Example pipelines.
 - Runbooks for common failures.
+- Backup and restore runbooks for Postgres lineage data and any operator-owned
+  durable state.
+- Retention configuration for Kafka topics, dead-letter topics, lineage tables,
+  and hot Redis caches.
+- RPO/RTO targets for local-demo and production-shaped profiles.
+- Resource sizing guide for Kafka partitions, worker requests and limits, Redis
+  memory, Postgres storage, and Postgres connection pooling.
+- SBOM generation and vulnerability scanning in the release process.
+- Signed image release workflow for operator and example worker images.
 - Grafana dashboards.
 - Alerting rules.
 - Architecture diagrams.
@@ -308,12 +413,18 @@ Testing:
 - Helm template tests.
 - Install smoke test into a fresh local cluster.
 - Documentation walkthrough test from an empty machine assumptions list.
+- Restore drill for lineage Postgres from a backup fixture.
+- Retention test or documented verification for Kafka and lineage cleanup.
 
 Exit criteria:
 
 - A developer can install the platform locally from documented commands.
 - The demo can be run repeatedly.
 - Common failure modes have runbooks.
+- Operators can estimate baseline resource needs and storage growth for a
+  pipeline before installing it.
+- Backup, restore, retention, and signed release workflows are documented and
+  tested at least once.
 
 ## API Design Principles
 
@@ -323,6 +434,8 @@ Exit criteria:
 - Avoid embedding implementation details in the public API too early.
 - Prefer additive API changes during `v1alpha1`.
 - Make status useful before making the UI fancy.
+- Treat tenancy, schema references, resource limits, and security policy as API
+  design constraints rather than operational afterthoughts.
 
 ## Record And Lineage Model
 
@@ -335,6 +448,8 @@ Each record moving through the system should have:
 - Processing timestamp.
 - Trace ID.
 - Parent record IDs when produced from one or more inputs.
+- Schema registry subject or equivalent schema identity when registry
+  integration exists.
 
 Each transform execution should record:
 
@@ -345,6 +460,67 @@ Each transform execution should record:
 - Input topic and output topic.
 - Worker pod name.
 - Success or failure status.
+- Accepted input schema version and emitted output schema version.
+- Backpressure state, retry count, and dead-letter routing decision when
+  applicable.
+
+## Tenancy And Security Strategy
+
+Early ADRs should answer:
+
+- Is the first install model single-tenant, namespace-per-team, or shared
+  cluster multi-tenant?
+- Which Kubernetes subjects can create `Pipeline` resources?
+- Which service accounts does the operator use, and what resources can they
+  mutate?
+- Where do Kafka, Redis, Postgres, registry, and worker secrets come from?
+- Which pod security profile applies to operator-managed workloads?
+- Which network paths are allowed before and after Istio is installed?
+- Are unsigned transform images allowed in local development only, or also in
+  production-shaped profiles?
+
+The implementation can start permissive for local development, but the intended
+production posture must be explicit.
+
+## Schema Evolution Strategy
+
+Schema compatibility must be part of the event platform contract:
+
+- Source and sink schemas should eventually refer to registry subjects and
+  versions, not just free-form strings.
+- Transforms should declare compatible input schema versions and produced output
+  schema versions.
+- Admission or reconciliation should reject known-incompatible pipeline graphs.
+- Runtime schema mismatches should produce clear metrics, events, and
+  dead-letter records.
+- Lineage records should preserve schema identity so historical outputs remain
+  explainable after schema evolution.
+
+## Backpressure Strategy
+
+Backpressure behavior should be designed before reliability features harden:
+
+- Track Kafka lag by pipeline, transform, and consumer group.
+- Define thresholds for warning, scaling, pausing, and failure states.
+- Decide when to scale workers and when scaling is unsafe.
+- Decide whether producers are slowed, workers pause consumption, records are
+  dropped, or records move to dead-letter topics.
+- Expose backpressure state through metrics, logs, Kubernetes events, and
+  `Pipeline` status.
+
+## Operations Strategy
+
+Production-shaped operations require documented defaults and drills:
+
+- Retention periods for Kafka, dead-letter topics, lineage tables, and cache
+  entries.
+- Backup cadence and restore procedure for Postgres lineage data.
+- RPO/RTO targets by environment profile.
+- Resource sizing guidance for common pipeline shapes.
+- Release artifacts with SBOMs, vulnerability scan results, and signed images.
+
+These details can mature over phases, but they should be tracked as roadmap
+requirements rather than discovered during packaging.
 
 ## Testing Strategy
 
@@ -374,6 +550,8 @@ Every service should expose:
 - Processing latency.
 - Error counts by category.
 - Kafka lag where relevant.
+- Backpressure state and lag threshold transitions.
+- Schema compatibility failures and dead-letter routing counts.
 - Lineage publish success and failure counts.
 - Health and readiness endpoints.
 
@@ -458,4 +636,3 @@ This project is succeeding if:
 - The operator reconciles idempotently.
 - Lineage is visible, queryable, and separate from the main data path.
 - Architecture decisions are documented when made.
-
