@@ -2,9 +2,6 @@ package controller
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -15,7 +12,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -60,7 +56,7 @@ func (r *PipelineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 	}
 
-	if err := validatePipeline(&pipeline); err != nil {
+	if err := pipelinev1alpha1.ValidatePipelineSpec(&pipeline.Spec); err != nil {
 		setReadyCondition(&pipeline, metav1.ConditionFalse, pipelinev1alpha1.ReasonInvalidSpec, err.Error())
 		if statusErr := r.updateStatus(ctx, &pipeline); statusErr != nil {
 			return ctrl.Result{}, statusErr
@@ -149,6 +145,14 @@ func (r *PipelineReconciler) applyWorkerDeployment(ctx context.Context, pipeline
 			"prometheus.io/port":   "8080",
 			"prometheus.io/path":   "/metrics",
 		}
+		deploy.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
+			RunAsNonRoot: ptr(true),
+			RunAsUser:    ptr(int64(10001)),
+			RunAsGroup:   ptr(int64(10001)),
+			SeccompProfile: &corev1.SeccompProfile{
+				Type: corev1.SeccompProfileTypeRuntimeDefault,
+			},
+		}
 		deploy.Spec.Template.Spec.Containers = []corev1.Container{{
 			Name:            "worker",
 			Image:           imageForTransform(transform, r.workerImage()),
@@ -164,6 +168,13 @@ func (r *PipelineReconciler) applyWorkerDeployment(ctx context.Context, pipeline
 				ContainerPort: 8080,
 			}},
 			Resources: resourcesForTransform(transform),
+			SecurityContext: &corev1.SecurityContext{
+				AllowPrivilegeEscalation: ptr(false),
+				ReadOnlyRootFilesystem:   ptr(true),
+				Capabilities: &corev1.Capabilities{
+					Drop: []corev1.Capability{"ALL"},
+				},
+			},
 			ReadinessProbe: &corev1.Probe{
 				ProbeHandler: corev1.ProbeHandler{
 					HTTPGet: &corev1.HTTPGetAction{Path: "/metrics", Port: intstr.FromString("metrics")},
@@ -230,43 +241,6 @@ func (r *PipelineReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.ConfigMap{}).
 		Complete(r)
-}
-
-func validatePipeline(pipeline *pipelinev1alpha1.Pipeline) error {
-	var problems []string
-	if pipeline.Spec.Source.Kind != "KafkaSource" {
-		problems = append(problems, "spec.source.kind must be KafkaSource")
-	}
-	if pipeline.Spec.Source.Topic == "" {
-		problems = append(problems, "spec.source.topic is required")
-	}
-	if pipeline.Spec.Sink.Kind != "KafkaSink" {
-		problems = append(problems, "spec.sink.kind must be KafkaSink")
-	}
-	if pipeline.Spec.Sink.Topic == "" {
-		problems = append(problems, "spec.sink.topic is required")
-	}
-	if len(pipeline.Spec.Transforms) == 0 {
-		problems = append(problems, "spec.transforms must include at least one transform")
-	}
-	for i, transform := range pipeline.Spec.Transforms {
-		if transform.Name == "" {
-			problems = append(problems, fmt.Sprintf("spec.transforms[%d].name is required", i))
-		}
-		if errs := validation.IsDNS1123Label(transform.Name); transform.Name != "" && len(errs) > 0 {
-			problems = append(problems, fmt.Sprintf("spec.transforms[%d].name must be a DNS-1123 label", i))
-		}
-		if transform.Image == "" {
-			problems = append(problems, fmt.Sprintf("spec.transforms[%d].image is required", i))
-		}
-		if transform.Replicas != nil && *transform.Replicas < 1 {
-			problems = append(problems, fmt.Sprintf("spec.transforms[%d].replicas must be at least 1", i))
-		}
-	}
-	if len(problems) > 0 {
-		return errors.New(strings.Join(problems, "; "))
-	}
-	return nil
 }
 
 func setReadyCondition(pipeline *pipelinev1alpha1.Pipeline, status metav1.ConditionStatus, reason, message string) {
@@ -355,4 +329,8 @@ func (r *PipelineReconciler) strimziCluster() string {
 
 func NamespacedName(namespace, name string) types.NamespacedName {
 	return types.NamespacedName{Namespace: namespace, Name: name}
+}
+
+func ptr[T any](value T) *T {
+	return &value
 }

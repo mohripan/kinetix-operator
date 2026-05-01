@@ -62,6 +62,25 @@ func TestPipelineReconcileCreatesWorkerResources(t *testing.T) {
 	if got := deploy.Spec.Template.ObjectMeta.Annotations["dapr.io/enabled"]; got != "true" {
 		t.Fatalf("dapr annotation = %q, want true", got)
 	}
+	if deploy.Spec.Template.Spec.SecurityContext == nil || deploy.Spec.Template.Spec.SecurityContext.RunAsNonRoot == nil || !*deploy.Spec.Template.Spec.SecurityContext.RunAsNonRoot {
+		t.Fatalf("worker pod must run as non-root")
+	}
+	if deploy.Spec.Template.Spec.SecurityContext.RunAsUser == nil || *deploy.Spec.Template.Spec.SecurityContext.RunAsUser != 10001 {
+		t.Fatalf("worker pod runAsUser = %v, want 10001", deploy.Spec.Template.Spec.SecurityContext.RunAsUser)
+	}
+	if deploy.Spec.Template.Spec.SecurityContext.SeccompProfile == nil || deploy.Spec.Template.Spec.SecurityContext.SeccompProfile.Type != corev1.SeccompProfileTypeRuntimeDefault {
+		t.Fatalf("worker pod seccomp profile = %#v, want RuntimeDefault", deploy.Spec.Template.Spec.SecurityContext.SeccompProfile)
+	}
+	containerSecurity := deploy.Spec.Template.Spec.Containers[0].SecurityContext
+	if containerSecurity == nil || containerSecurity.AllowPrivilegeEscalation == nil || *containerSecurity.AllowPrivilegeEscalation {
+		t.Fatalf("worker container must disallow privilege escalation")
+	}
+	if containerSecurity.ReadOnlyRootFilesystem == nil || !*containerSecurity.ReadOnlyRootFilesystem {
+		t.Fatalf("worker container must use a read-only root filesystem")
+	}
+	if containerSecurity.Capabilities == nil || len(containerSecurity.Capabilities.Drop) != 1 || containerSecurity.Capabilities.Drop[0] != "ALL" {
+		t.Fatalf("worker container capabilities drop = %#v, want ALL", containerSecurity.Capabilities)
+	}
 	if !metav1.IsControlledBy(&deploy, pipeline) {
 		t.Fatalf("deployment is not controlled by pipeline")
 	}

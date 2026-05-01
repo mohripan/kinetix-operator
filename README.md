@@ -84,6 +84,7 @@ kubectl get pipelines -n kinetix
 - [CI plan](docs/ci-plan.md)
 - [Phase 1 local runtime plan](docs/phase-1-local-runtime-plan.md)
 - [Phase 2 operator plan](docs/phase-2-operator-plan.md)
+- [Phase 2 security and admission](docs/phase-2-security-and-admission.md)
 - [Architecture decisions](docs/adr)
 
 ## Current Status

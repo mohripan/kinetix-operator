@@ -3,7 +3,10 @@ resources:
   - crd/bases/pipeline.kinetix.io_pipelines.yaml
   - rbac/service_account.yaml
   - rbac/role.yaml
+  - rbac/pipeline_editor_role.yaml
   - rbac/leader_election_role.yaml
   - rbac/role_binding.yaml
   - rbac/leader_election_role_binding.yaml
+  - network/operator_network_policy.yaml
+  - network/worker_network_policy.yaml
   - manager/manager.yaml

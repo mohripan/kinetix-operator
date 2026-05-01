@@ -41,6 +41,10 @@ For a `Pipeline` named `example`, the operator reconciles:
 All resources receive controller owner references. The `Pipeline` finalizer also
 deletes these children explicitly before the API object is removed.
 
+Worker pods are reconciled with the Phase 2 security baseline: non-root pod
+execution, `RuntimeDefault` seccomp, no privilege escalation, dropped Linux
+capabilities, and a read-only root filesystem.
+
 ## Status
 
 `kubectl get pipelines -n kinetix` shows readiness, worker name, source topic,
@@ -74,3 +78,14 @@ kubectl apply -k operator/config
 kubectl apply -f examples/pipeline.yaml
 kubectl get pipelines -n kinetix
 ```
+
+## Phase 2 Decisions
+
+- [ADR 0008](adr/0008-use-single-tenant-namespace-for-phase-2.md) chooses a
+  single-tenant `kinetix` namespace for Phase 2.
+- [ADR 0009](adr/0009-phase-2-security-baseline.md) defines the initial
+  security baseline.
+- [ADR 0010](adr/0010-phase-2-schema-registry-strategy.md) documents the schema
+  registry interpretation before Phase 3.
+- [Phase 2 security and admission](phase-2-security-and-admission.md) documents
+  RBAC, pod security, NetworkPolicies, and webhook behavior.
