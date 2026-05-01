@@ -1,1 +1,70 @@
-# kinetix-operator
+# Kinetix Operator
+
+Kinetix Operator is a Kubernetes-native real-time data pipeline platform. The
+project is planned around three planes:
+
+- **Control plane:** a Kubernetes operator that reconciles declarative
+  `Pipeline` resources into runtime infrastructure.
+- **Data plane:** Kafka-backed workers that process records through source,
+  transform, and sink stages.
+- **Lineage plane:** asynchronous OpenLineage events stored for debugging,
+  auditability, and record-level traceability.
+
+The first implementation milestone is intentionally small: establish a clean
+repository foundation before distributed components are added.
+
+## Repository Layout
+
+```text
+/operator        Kubernetes operator, API types, controllers, and webhooks
+/workers         Worker runtime package, transform examples, and producers
+/lineage         Lineage ingestion service and query API
+/ui              Pipeline and lineage UI
+/charts          Helm charts for local and installable deployments
+/config          Kubebuilder manifests and kustomize overlays
+/deploy          Local cluster manifests and environment profiles
+/docs            Architecture notes, ADRs, diagrams, and operating guides
+/scripts         Repeatable local setup, demo, test, and cleanup scripts
+/test            End-to-end fixtures and kuttl tests
+```
+
+## Local Prerequisites
+
+Phase 0 does not require a running cluster. The expected local toolchain for
+the next phases is documented in [docs/tool-versions.md](docs/tool-versions.md).
+
+At a minimum, contributors should expect to install:
+
+- Go
+- Docker
+- kind or k3d
+- kubectl
+- Helm
+- Kubebuilder
+- Dapr CLI
+- k9s and stern
+- kafkactl or kaf
+
+## Common Commands
+
+```sh
+make help
+make docs
+make check
+```
+
+The initial Makefile is a command surface for the project. Targets that depend
+on code or cluster assets are placeholders until those components exist.
+
+## Documentation
+
+- [Roadmap](ROADMAP.md)
+- [Tool versions](docs/tool-versions.md)
+- [CI plan](docs/ci-plan.md)
+- [Phase 1 local runtime plan](docs/phase-1-local-runtime-plan.md)
+- [Architecture decisions](docs/adr)
+
+## Current Status
+
+Phase 0 is repository bootstrap. No operator, worker, lineage service, or UI
+runtime has been implemented yet.
