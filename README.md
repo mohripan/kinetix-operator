@@ -10,8 +10,8 @@ project is planned around three planes:
 - **Lineage plane:** asynchronous OpenLineage events stored for debugging,
   auditability, and record-level traceability.
 
-The first implementation milestone is intentionally small: establish a clean
-repository foundation before distributed components are added.
+The first runtime milestone is intentionally small: run one hardcoded Kafka
+pipeline locally before introducing CRDs or the operator reconciler.
 
 ## Repository Layout
 
@@ -53,8 +53,20 @@ make docs
 make check
 ```
 
-The initial Makefile is a command surface for the project. Targets that depend
-on code or cluster assets are placeholders until those components exist.
+Phase 1 local runtime commands:
+
+```sh
+make kind-up
+make deps-up
+make docker-build
+make docker-load
+make deploy-demo
+make smoke
+make kind-down
+```
+
+`make deploy-demo` exposes Prometheus at <http://localhost:30000> and Grafana
+at <http://localhost:30001> (`admin` / `admin`).
 
 ## Documentation
 
@@ -66,5 +78,10 @@ on code or cluster assets are placeholders until those components exist.
 
 ## Current Status
 
-Phase 0 is repository bootstrap. No operator, worker, lineage service, or UI
-runtime has been implemented yet.
+Phase 1 implements a hardcoded local pipeline:
+
+```text
+producer -> kinetix-input -> worker -> kinetix-output -> sink
+```
+
+The operator, CRD, lineage service, and UI are planned for later phases.

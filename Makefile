@@ -1,4 +1,4 @@
-.PHONY: help docs check fmt test lint kind-up kind-down
+.PHONY: help docs check fmt test lint kind-up kind-down deps-up docker-build docker-load deploy-demo smoke
 SHELL := pwsh.exe
 .SHELLFLAGS := -NoProfile -Command
 
@@ -8,20 +8,35 @@ help: ## Show available commands.
 docs: ## Validate that required Phase 0 documentation files exist.
 	@$$required = @('README.md','ROADMAP.md','docs/tool-versions.md','docs/ci-plan.md','docs/adr/0001-use-kubernetes-operator.md','docs/adr/0002-use-kafka-as-the-event-log.md','docs/adr/0003-use-openlineage-for-lineage-events.md','docs/adr/0004-keep-lineage-async.md'); $$missing = $$required | Where-Object { -not (Test-Path $$_) }; if ($$missing) { Write-Error ('Missing required docs: ' + ($$missing -join ', ')); exit 1 }
 
-check: docs ## Run all checks currently available in the bootstrap phase.
-	@Write-Host "Phase 0 checks passed."
+check: docs test ## Run documentation and code checks.
+	@Write-Host "Checks passed."
 
-fmt: ## Format project code once Go modules exist.
-	@Write-Host "No code to format yet."
+fmt: ## Format Go code.
+	@Set-Location workers; gofmt -w ./cmd ./internal
 
-test: ## Run tests once implementation packages exist.
-	@Write-Host "No tests to run yet."
+test: ## Run Go unit tests.
+	@Set-Location workers; go test ./...
 
 lint: ## Run linters once implementation packages exist.
 	@Write-Host "No linters configured yet."
 
-kind-up: ## Create the local Kubernetes cluster once Phase 1 scripts exist.
-	@Write-Host "Local cluster automation starts in Phase 1."
+kind-up: ## Create the local kind cluster.
+	@./scripts/kind-up.ps1
 
-kind-down: ## Delete the local Kubernetes cluster once Phase 1 scripts exist.
-	@Write-Host "Local cluster automation starts in Phase 1."
+kind-down: ## Delete the local kind cluster.
+	@./scripts/kind-down.ps1
+
+deps-up: ## Install local runtime dependencies into the kind cluster.
+	@./scripts/deps-up.ps1
+
+docker-build: ## Build the local demo worker image.
+	@./scripts/docker-build.ps1
+
+docker-load: ## Load the local demo image into kind.
+	@./scripts/docker-load.ps1
+
+deploy-demo: ## Deploy the hardcoded Phase 1 pipeline.
+	@./scripts/deploy-demo.ps1
+
+smoke: ## Verify records flow from source to sink.
+	@./scripts/smoke.ps1

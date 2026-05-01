@@ -1,0 +1,145 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kinetix-producer
+  namespace: kinetix
+  labels:
+    app.kubernetes.io/name: kinetix-producer
+    app.kubernetes.io/part-of: kinetix
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kinetix-producer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kinetix-producer
+        app.kubernetes.io/part-of: kinetix
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: kinetix-producer
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /metrics
+    spec:
+      containers:
+        - name: producer
+          image: kinetix/demo:dev
+          imagePullPolicy: IfNotPresent
+          command: ["/producer"]
+          env:
+            - name: KINETIX_BROKERS
+              value: kinetix-kafka-kafka-bootstrap.kinetix.svc.cluster.local:9092
+            - name: KINETIX_INPUT_TOPIC
+              value: kinetix-input
+            - name: KINETIX_PRODUCE_INTERVAL
+              value: 1s
+          ports:
+            - name: metrics
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kinetix-worker
+  namespace: kinetix
+  labels:
+    app.kubernetes.io/name: kinetix-worker
+    app.kubernetes.io/part-of: kinetix
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kinetix-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kinetix-worker
+        app.kubernetes.io/part-of: kinetix
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: kinetix-worker
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /metrics
+    spec:
+      containers:
+        - name: worker
+          image: kinetix/demo:dev
+          imagePullPolicy: IfNotPresent
+          command: ["/worker"]
+          env:
+            - name: KINETIX_BROKERS
+              value: kinetix-kafka-kafka-bootstrap.kinetix.svc.cluster.local:9092
+            - name: KINETIX_INPUT_TOPIC
+              value: kinetix-input
+            - name: KINETIX_OUTPUT_TOPIC
+              value: kinetix-output
+            - name: KINETIX_GROUP
+              value: kinetix-worker
+          ports:
+            - name: metrics
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 75m
+              memory: 96Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kinetix-sink
+  namespace: kinetix
+  labels:
+    app.kubernetes.io/name: kinetix-sink
+    app.kubernetes.io/part-of: kinetix
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kinetix-sink
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kinetix-sink
+        app.kubernetes.io/part-of: kinetix
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: kinetix-sink
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /metrics
+    spec:
+      containers:
+        - name: sink
+          image: kinetix/demo:dev
+          imagePullPolicy: IfNotPresent
+          command: ["/sink"]
+          env:
+            - name: KINETIX_BROKERS
+              value: kinetix-kafka-kafka-bootstrap.kinetix.svc.cluster.local:9092
+            - name: KINETIX_OUTPUT_TOPIC
+              value: kinetix-output
+            - name: KINETIX_GROUP
+              value: kinetix-sink
+          ports:
+            - name: metrics
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
